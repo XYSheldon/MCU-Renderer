@@ -1,0 +1,43 @@
+{ // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format    
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "command": "make",
+            "args": [
+                "EXE=${workspaceRootFolderName}.exe"
+            ],
+            "type": "shell",
+            "problemMatcher": []
+        },
+        {
+            "label": "build-debug",
+            "command": "make",
+            "args": [
+                "DEBUG=-g", //添加debug 参数 使gcc 生成调试信息
+                "PREDEF=Debug", //相当于在程序中定义了一个宏定义#define Debug
+                "EXE=${workspaceRootFolderName}.exe"
+            ],
+            "type": "shell"
+        }, //此命令等效展开为:mingw32-make.exe target=vscode_c_demo.exe DEBUG=-g PREDEF=Debug        
+        {
+            "label": "clean",
+            "command": "make",
+            "args": [
+                "clean",
+                "EXE=${workspaceRootFolderName}.exe"
+            ],
+            "type": "shell",
+            "problemMatcher": []
+        }, //此命令等效展开为:mingw32-make.exe clean target=vscode_c_demo.exe        
+        {
+            "label": "runing",
+            "command": "./runExcute.sh",
+            "args": [
+                "${workspaceRootFolderName}.exe" // 传给脚本的参数
+            ],
+            "type": "shell"
+        } //此命令等效展开为:mingw32-make.exe target=vscode_c_demo.exe  然后执行 ./vscode_c_demo.exe    
+    ]
+}

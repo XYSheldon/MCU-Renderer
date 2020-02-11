@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "name": "MinGW_x86_64_Win32",
+            "includePath": [
+                "C:\\msys64\\mingw64\\include",
+                "C:\\msys64\\mingw64\\include\\SDL2",
+                "${workspaceFolder}/**",
+                "${workspaceFolder}\\imgui"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"
+            ],
+            "compilerPath": "C:\\msys64\\mingw64\\bin\\g++.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-x64",
+            "compileCommands": "make"
+        }
+    ],
+    "version": 4
+}
