@@ -17,15 +17,15 @@
 EXE = UntitledOutput
 DEBUG =
 SOURCES = main.cpp
-SOURCES += geometry.cpp model.cpp
+SOURCES += ./XYSGL/model.cpp ./XYSGL/glcore.cpp ./XYSGL/geometry.cpp
 SOURCES += ./imgui/imgui_impl_sdl.cpp ./imgui/imgui_impl_opengl3.cpp
 SOURCES += ./imgui/imgui.cpp ./imgui/imgui_demo.cpp ./imgui/imgui_draw.cpp ./imgui/imgui_widgets.cpp
 
 OBJS = $(addsuffix .o, $(basename $(notdir $(SOURCES))))
 UNAME_S := $(shell uname -s)
 
-CXXFLAGS = -I../ -I../../ -I./imgui/
-CXXFLAGS += -g -Wall -Wformat
+CXXFLAGS = -I../ -I../../ -I./imgui/ -I./XYSGL/
+CXXFLAGS += -g -Wall -Wformat -pg -O3
 LIBS =
 
 ##---------------------------------------------------------------------
@@ -95,6 +95,9 @@ endif
 	$(CXX) $(CXXFLAGS) $(DEBUG) -c -o $@ $<
 
 %.o:./imgui/%.cpp
+	$(CXX) $(CXXFLAGS) $(DEBUG) -c -o $@ $<
+
+%.o:./XYSGL/%.cpp
 	$(CXX) $(CXXFLAGS) $(DEBUG) -c -o $@ $<
 
 %.o:./imgui/libs/gl3w/GL/%.c

@@ -6,7 +6,8 @@
                 "C:\\msys64\\mingw64\\include",
                 "C:\\msys64\\mingw64\\include\\SDL2",
                 "${workspaceFolder}/**",
-                "${workspaceFolder}\\imgui"
+                "${workspaceFolder}\\imgui",
+                "${workspaceFolder}\\XYSGL"
             ],
             "defines": [
                 "_DEBUG",

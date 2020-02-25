@@ -6,8 +6,9 @@
 #include "imgui.h"
 #include "imgui_impl_sdl.h"
 #include "imgui_impl_opengl3.h"
-#include "model.h"
-#include "geometry.h"
+#include "XYSGL/model.h"
+#include "XYSGL/geometry.h"
+#include "XYSGL/glcore.h"
 #include <stdio.h>
 #include <algorithm>
 #include <SDL.h>
@@ -16,10 +17,6 @@
 #include <cmath>
 #include <limits>
 
-#define SCREEN_WIDTH 400
-#define SCREEN_HEIGHT 400
-#define DEPTH 255
-#define PI 3.141592653
 // About Desktop OpenGL function loaders:
 //  Modern desktop OpenGL doesn't have a standard portable header file to load OpenGL function pointers.
 //  Helper libraries are often used for this purpose! Here we are supporting a few common ones (gl3w, glew, glad).
@@ -38,19 +35,15 @@ using namespace gl;
 #include IMGUI_IMPL_OPENGL_LOADER_CUSTOM
 #endif
 
+const float angleDelta = 2.0f;
+float sth = std::sin(angleDelta * (PI / 180.0f)), cth = std::cos(angleDelta * (PI / 180.0f));
 Model *model = NULL;
-Vec3f light_dir = Vec3f(-1, 1, -1).normalize();
-Vec3f eye(1, 0, 3);
-Vec3f center(0, 0, 0);
 
 int mainbitmap_width = SCREEN_WIDTH;
 int mainbitmap_height = SCREEN_HEIGHT;
 GLuint mainbitmap_texture = 0;
 GLuint zbufferbitmap_texture = 0;
 unsigned char *image_data;
-unsigned char render_data[SCREEN_HEIGHT][SCREEN_WIDTH][4];
-unsigned char zbimage[SCREEN_HEIGHT][SCREEN_WIDTH][4];
-int zbuffer[SCREEN_HEIGHT][SCREEN_WIDTH];
 
 void InitialBitmap()
 {
@@ -63,96 +56,9 @@ void InitialBitmap()
     // Upload pixels into texture
     glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 }
-
-Matrix viewport(int x, int y, int w, int h)
-{
-    Matrix m = Matrix::identity(4);
-    m[0][3] = x + w / 2.f;
-    m[1][3] = y + h / 2.f;
-    m[2][3] = DEPTH / 2.f;
-
-    m[0][0] = w / 2.f;
-    m[1][1] = h / 2.f;
-    m[2][2] = DEPTH / 2.f;
-    return m;
-}
-
-Matrix lookat(Vec3f eye, Vec3f center, Vec3f up)
-{
-    Vec3f z = (eye - center).normalize();
-    Vec3f x = (up ^ z).normalize();
-    Vec3f y = (z ^ x).normalize();
-    Matrix res = Matrix::identity(4);
-    for (int i = 0; i < 3; i++)
-    {
-        res[0][i] = x[i];
-        res[1][i] = y[i];
-        res[2][i] = z[i];
-        res[i][3] = -center[i];
-    }
-    return res;
-}
-
-void triangle(Vec3i t0, Vec3i t1, Vec3i t2, float intensity)
-{
-    if (t0.y == t1.y && t0.y == t2.y)
-        return; // i dont care about degenerate triangles
-    if (t0.y > t1.y)
-    {
-        std::swap(t0, t1);
-    }
-    if (t0.y > t2.y)
-    {
-        std::swap(t0, t2);
-    }
-    if (t1.y > t2.y)
-    {
-        std::swap(t1, t2);
-    }
-
-    int total_height = t2.y - t0.y;
-    for (int i = 0; i < total_height; i++)
-    {
-        bool second_half = i > t1.y - t0.y || t1.y == t0.y;
-        int segment_height = second_half ? t2.y - t1.y : t1.y - t0.y;
-        float alpha = (float)i / total_height;
-        float beta = (float)(i - (second_half ? t1.y - t0.y : 0)) / segment_height; // be careful: with above conditions no division by zero here
-        Vec3i A = t0 + Vec3f(t2 - t0) * alpha;
-        Vec3i B = second_half ? t1 + Vec3f(t2 - t1) * beta : t0 + Vec3f(t1 - t0) * beta;
-        if (A.x > B.x)
-        {
-            std::swap(A, B);
-        }
-        for (int j = A.x; j <= B.x; j++)
-        {
-            float phi = B.x == A.x ? 1. : (float)(j - A.x) / (float)(B.x - A.x);
-            Vec3i P = Vec3f(A) + Vec3f(B - A) * phi;
-            if (P.x>=SCREEN_WIDTH||P.y>=SCREEN_HEIGHT||P.x<0||P.y<0) continue;
-            if (zbuffer[P.y][P.x] < P.z)
-            {
-                zbuffer[P.y][P.x] = P.z;
-                render_data[SCREEN_HEIGHT-1-P.y][P.x][0]= 255*intensity;
-                render_data[SCREEN_HEIGHT-1-P.y][P.x][1]= 255*intensity;
-                render_data[SCREEN_HEIGHT-1-P.y][P.x][2]= 255*intensity;
-                render_data[SCREEN_HEIGHT-1-P.y][P.x][3]= 255;
-            }
-        }
-    }
-}
-
 // Main code
 int main(int argc, char **argv)
 {
-
-    if (2 == argc)
-    {
-        model = new Model(argv[1]);
-    }
-    else
-    {
-        model = new Model("obj/LowPoly.obj");
-    }
-
     // Setup SDL
     // (Some versions of SDL before <2.0.10 appears to have performance/stalling issues on a minority of Windows systems,
     // depending on whether SDL_INIT_GAMECONTROLLER is enabled or disabled.. updating to latest version of SDL is recommended!)
@@ -249,36 +155,24 @@ int main(int argc, char **argv)
     bool show_bitmap_window = true;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
+    if (2 == argc)
+    {
+        model = new Model(argv[1]);
+    }
+    else
+    {
+        model = new Model("obj/GRE.obj");
+    }
     InitialBitmap();
-
-    for (int i = 0; i < SCREEN_HEIGHT; i++)
-        for (int j = 0; j < SCREEN_WIDTH; j++)
-        {
-            zbuffer[i][j] = std::numeric_limits<int>::min();
-        }
-
-    for (int i = 0; i < SCREEN_HEIGHT; i++)
-        for (int j = i / 2; j < i; j++)
-        {
-            render_data[i][j][0] = 128;
-            render_data[i][j][1] = 128;
-            render_data[i][j][2] = 128;
-            render_data[i][j][3] = 255;
-        }
-
     ImVec2 pos;
     int scopex, scopey;
     float ang = 0;
-    Matrix ViewPort = viewport(SCREEN_WIDTH / 8, SCREEN_HEIGHT / 8, SCREEN_WIDTH * 3 / 4, SCREEN_HEIGHT * 3 / 4);
+    bool isRotate = 0;
     // Main loop
     bool done = false;
     while (!done)
     {
-        ang += 0.1;
-        if (ang > PI * 2)
-            ang = 0;
-        eye[0] = 2*cos(ang);
-        eye[2] = 2*sin(ang);
+
         // Poll and handle events (inputs, window resize, etc.)
         // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
         // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application.
@@ -294,52 +188,120 @@ int main(int argc, char **argv)
                 done = true;
         }
 
-        // Start the Dear ImGui frame
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL2_NewFrame(window);
-        ImGui::NewFrame();
-
         {
+            direction.normalize();
+            Vec3f othdir(-direction[2], 0.0f, direction[0]);
+            othdir.normalize();
+
+            if (isRotate)
+            {
+                ang += angleDelta * (PI / 180.f);
+                if (ang > PI * 2)
+                    ang = 0;
+                eye[0] = 2 * cos(ang) + center[0];
+                eye[1] = center[1];
+                eye[2] = 2 * sin(ang) + center[2];
+            }
+            else
+            {
+                //Keyboard io.KeysDown
+
+                //Movements~
+                Vec3f delta(0.f, 0.f, 0.f);
+                if (io.KeysDown[0x1A]) //W
+                {
+                    delta = Vec3f(direction[0], 0.0f, direction[2]).normalize() * -1;
+                }
+                if (io.KeysDown[0x16]) //S
+                {
+                    delta = delta + Vec3f(direction[0], 0.0f, direction[2]).normalize();
+                }
+                if (io.KeysDown[0x04]) //A
+                {
+                    delta = delta - othdir;
+                }
+                if (io.KeysDown[0x07]) //D
+                {
+                    delta = delta + othdir;
+                }
+                if (io.KeysDown[0x2C]) //Space
+                {
+                    delta[1] = delta[1] + 1;
+                }
+                if (io.KeysDown[0xE1]) //Left Shift
+                {
+                    delta[1] = delta[1] - 1;
+                }
+
+                //View Rotations~
+                if (io.KeysDown[0x52] && direction[1] > -0.8f) //Up
+                {
+                    direction = Vec3f(cth * direction[0] + sth * direction[0] * direction[1],
+                                      cth * direction[1] - sth * (direction[0] * direction[0] + direction[2] * direction[2]),
+                                      cth * direction[2] + sth * direction[1] * direction[2])
+                                    .normalize();
+                }
+                if (io.KeysDown[0x51] && direction[1] < 0.8f) //Down
+                {
+                    direction = Vec3f(cth * direction[0] - sth * direction[0] * direction[1],
+                                      cth * direction[1] + sth * (direction[0] * direction[0] + direction[2] * direction[2]),
+                                      cth * direction[2] - sth * direction[1] * direction[2])
+                                    .normalize();
+                }
+                if (io.KeysDown[0x50]) //Left
+                {
+                    direction = Vec3f(direction[0] * cth + direction[2] * (-sth),
+                                      direction[1],
+                                      direction[0] * (sth) + direction[2] * cth)
+                                    .normalize();
+                }
+                if (io.KeysDown[0x4F]) //Right
+                {
+                    direction = Vec3f(direction[0] * cth + direction[2] * (sth),
+                                      direction[1],
+                                      direction[0] * (-sth) + direction[2] * cth)
+                                    .normalize();
+                }
+
+                delta = delta * 0.02f;
+                eye = eye + delta;
+                center = eye + direction;
+            }
+            //memset(zbuffer, 0xFF, sizeof(zbuffer));
             for (int i = 0; i < SCREEN_HEIGHT; i++)
                 for (int j = 0; j < SCREEN_WIDTH; j++)
-                {
-                    zbuffer[i][j] = std::numeric_limits<int>::min();
-                }
+                    zbuffer[i][j] = -std::numeric_limits<float>::max();
             memset(render_data, 0, sizeof(render_data));
-            // draw the model
-            Matrix ModelView = lookat(eye, center, Vec3f(0, 1, 0));
-            Matrix Projection = Matrix::identity(4);
-            Projection[3][2] = -1.f / (eye - center).norm();
 
-            //std::cerr << ModelView << std::endl;
-            //std::cerr << Projection << std::endl;
-            //std::cerr << ViewPort << std::endl;
-            Matrix z = (ViewPort * Projection * ModelView);
-            //std::cerr << z << std::endl;
-            Vec3i screen_coords[3];
-            Vec3f world_coords[3];
-            std::vector<int> face;
-            Vec3f v,n;
+            //viewport(fov, 0.1, 1000);
+            //lookat(eye, center, up);
+            updatematrix();
+            Matrix INTEM = Mvp * Mper * Mcam;
+            mat<3, 4, float> varying_tri;
             for (int i = 0; i < model->nfaces(); i++)
             {
-                face = model->face(i);
-
+                float intensity;
                 for (int j = 0; j < 3; j++)
                 {
-                    v = model->vert(face[j]);
-                    screen_coords[j] = Vec3f(z * Matrix(v));
-                    world_coords[j] = v;
+                    //Vec4f gl_Vertex = INTEM * embed<4>(model->vert(i, j));
+                    varying_tri[j] = INTEM * embed<4>(model->vert(i, j));
+                    //varying_tri[j] = varying_tri[j] / varying_tri[j][3];
                 }
-                n = (world_coords[2] - world_coords[0]) ^ (world_coords[1] - world_coords[0]);
-                n.normalize();
-                float intensity = n * light_dir;
-                if (intensity > 0)
-                {
-                    triangle(screen_coords[0], screen_coords[1], screen_coords[2], intensity);
-                }else
-                {
-                    triangle(screen_coords[0], screen_coords[1], screen_coords[2], 0);
-                }
+                intensity = std::max(0.f, model->faces_normal(i) * light_dir.normalize());
+                triangle(varying_tri, intensity, false);
+            }
+
+            //Render Ground
+
+            if (0)
+            {
+                //Vec4f gl_Vertex = INTEM * embed<4>(model->vert(i, j));
+                varying_tri[0] = INTEM * (embed<4>(Vec3f(-1, 0, 1) * 5.0f));
+                varying_tri[1] = INTEM * (embed<4>(Vec3f(1, 0, 1) * 5.0f));
+                varying_tri[2] = INTEM * (embed<4>(Vec3f(1, 0, -1) * 5.0f));
+                triangle(varying_tri, 0.2f, false);
+                varying_tri[1] = INTEM * (embed<4>(Vec3f(-1, 0, -1) * 5.0f));
+                triangle(varying_tri, 0.2f, false);
             }
         }
         { /* dump z-buffer (debugging purposes only)
@@ -354,6 +316,10 @@ int main(int argc, char **argv)
                 }
             }*/
         }
+        // Start ImGui frame
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplSDL2_NewFrame(window);
+        ImGui::NewFrame();
 
         // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
         if (show_demo_window)
@@ -378,7 +344,7 @@ int main(int argc, char **argv)
             ImGui::SameLine();
             ImGui::Text("counter = %d", counter);
 
-            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            //ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
             ImGui::End();
         }
 
@@ -394,6 +360,7 @@ int main(int argc, char **argv)
 
         if (show_bitmap_window)
         {
+            ImGui::SetNextWindowBgAlpha(0.35f);
             image_data = &render_data[0][0][0];
             glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, mainbitmap_width, mainbitmap_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image_data);
@@ -405,6 +372,8 @@ int main(int argc, char **argv)
             sprintf(buf, u8"位图模拟(LCD NOKIA 5110) 无缩放 1:1 Size: (%d x %d)", mainbitmap_width, mainbitmap_height);
             ImGui::Begin(buf);
             //ImGui::Text("pointer = %p", mainbitmap_texture);
+            ImGui::Text("Faces Rendered: %I64d Vertexes: %d", facecount, model->nverts());
+            facecount = 0;
             if (ImGui::IsMousePosValid())
             {
                 ImGui::Text("Mouse pos: (%d, %d) |", scopex, scopey);
@@ -413,7 +382,62 @@ int main(int argc, char **argv)
             }
             else
                 ImGui::Text("Mouse pos: <INVALID>");
+            ImGui::SliderFloat("FOV", &fov, 0.1f, 2.0f);
+            ImGui::Checkbox(u8"旋转", &isRotate);
+            ImGui::SameLine();
+            if (ImGui::Button(u8"复位"))
+            {
+                light_dir = Vec3f(-1, 1, -1);
+                eye = Vec3f(0, 0, -1);
+                direction = Vec3f(0, 0, -1);
+                center = eye + direction;
+                up = Vec3f(0, 1, 0.0f);
+                fov = 90 * (PI / 180.0f);
+            }
+            Vec4f temp = Mcam * (embed<4>(Vec3f(0, 0, 0)));
+            ImGui::Text("Mcam->%f\t %f\t %f\t %f", temp[0], temp[1], temp[2], temp[3]);
+            temp = Mper * temp;
+            ImGui::Text("Mper->%f\t %f\t %f\t %f", temp[0], temp[1], temp[2], temp[3]);
+            temp = Mvp * temp;
+            ImGui::Text("Mvp->%f\t %f\t %f\t %f", temp[0], temp[1], temp[2], temp[3]);
+            temp = temp / temp[3];
+            ImGui::Text("Divided->%f\t %f\t %f\t %f", temp[0], temp[1], temp[2], temp[3]);
+            ImGui::Text("Near: %f", 1.0f / std::tan(fov / 2));
+            ImGui::Text("Center Position");
+            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() * 0.2f);
+            ImGui::SliderFloat("X1", &center[0], -2.0f, 2.0f);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() * 0.2f);
+            ImGui::SliderFloat("Y1", &center[1], -2.0f, 2.0f);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() * 0.2f);
+            ImGui::SliderFloat("Z1", &center[2], -2.0f, 2.0f);
+            ImGui::Text("Eye Position");
+            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() * 0.2f);
+            ImGui::SliderFloat("X2", &eye[0], -2.0f, 2.0f);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() * 0.2f);
+            ImGui::SliderFloat("Y2", &eye[1], -2.0f, 2.0f);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() * 0.2f);
+            ImGui::SliderFloat("Z2", &eye[2], -2.0f, 2.0f);
+            ImGui::Text("Light Dir Position");
+            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() * 0.2f);
+            ImGui::SliderFloat("X3", &light_dir[0], -2.0f, 2.0f);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() * 0.2f);
+            ImGui::SliderFloat("Y3", &light_dir[1], -2.0f, 2.0f);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() * 0.2f);
+            ImGui::SliderFloat("Z3", &light_dir[2], -2.0f, 2.0f);
             ImGui::Text(u8"Average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            ImGui::Text("Keys Pressed:");
+            for (int i = 0; i < IM_ARRAYSIZE(io.KeysDown); i++)
+                if (io.KeysDownDuration[i] >= 0.0f)
+                {
+                    ImGui::SameLine();
+                    ImGui::Text("%d (0x%X) (%.02f secs)", i, i, io.KeysDownDuration[i]);
+                }
             pos = ImGui::GetCursorScreenPos();
             ImGui::Image((void *)(intptr_t)mainbitmap_texture, ImVec2(mainbitmap_width, mainbitmap_height));
             ImGui::End();
