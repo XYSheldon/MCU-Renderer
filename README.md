@@ -1,3 +1,3 @@
 # MCU-Renderer
  
-An orignial 3D Renderer runs in any platform~~~
+An orignial 3D Renderer runs on any platform~~~
